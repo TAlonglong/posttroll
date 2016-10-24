@@ -26,21 +26,19 @@ Receive broadcasted addresses in a standard pytroll Message:
 /<server-name>/address info ... host:port
 """
 import copy
+import errno
 import logging
 import os
 import threading
-import errno
 import time
-
 from datetime import datetime, timedelta
 
+from zmq import LINGER, NOBLOCK, POLLIN, REP, REQ
+
+from posttroll import context
 from posttroll.bbmcast import MulticastReceiver, SocketTimeout
 from posttroll.message import Message
 from posttroll.publisher import Publish
-
-from zmq import REQ, REP, LINGER, POLLIN, NOBLOCK
-from posttroll import context
-
 
 __all__ = ('AddressReceiver', 'getaddress')
 
@@ -118,7 +116,7 @@ class AddressReceiver(object):
         if (now - self._last_age_check) <= min_interval:
             return
 
-        LOGGER.debug("%s - checking addresses", str(datetime.utcnow()) )
+        LOGGER.debug("%s - checking addresses", str(datetime.utcnow()))
         self._last_age_check = now
         to_del = []
         with self._address_lock:
@@ -167,7 +165,7 @@ class AddressReceiver(object):
                 while self._do_run:
                     try:
                         data, fromaddr = recv()
-                        LOGGER.debug("data %s" % data)
+                        LOGGER.debug("data %s", data)
                         del fromaddr
                     except SocketTimeout:
                         if self._multicast_enabled:

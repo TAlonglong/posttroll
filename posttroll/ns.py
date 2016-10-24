@@ -25,17 +25,20 @@
 Default port is 5557, if $NAMESERVER_PORT is not defined.
 """
 import logging
+import os
+import time
 from datetime import datetime, timedelta
 
-import time
+import six
 # pylint: disable=E0611
-from zmq import REQ, REP, LINGER, POLLIN, NOBLOCK, Poller
-# pylint: enable=E0611
+from zmq import LINGER, NOBLOCK, POLLIN, REP, REQ, Poller
 
 from posttroll import context
 from posttroll.address_receiver import AddressReceiver
 from posttroll.message import Message
-import os
+
+# pylint: enable=E0611
+
 
 PORT = int(os.environ.get("NAMESERVER_PORT", 5557))
 
@@ -78,12 +81,13 @@ def get_pub_address(name, timeout=10, nameserver="localhost"):
     try:
         socket.setsockopt(LINGER, timeout * 1000)
         socket.connect("tcp://" + nameserver + ":" + str(PORT))
-
+        logger.debug('Connecting to %s', "tcp://" +
+                     nameserver + ":" + str(PORT))
         poller = Poller()
         poller.register(socket, POLLIN)
 
         message = Message("/oper/ns", "request", {"service": name})
-        socket.send_string(str(message))
+        socket.send_string(six.text_type(message))
 
         # Get the reply.
         sock = poller.poll(timeout=timeout * 1000)
@@ -126,13 +130,15 @@ class NameServer(object):
         """
         del args
 
-        arec = AddressReceiver(max_age=self._max_age, multicast_enabled=self._multicast_enabled)
+        arec = AddressReceiver(max_age=self._max_age,
+                               multicast_enabled=self._multicast_enabled)
         arec.start()
         port = PORT
 
         try:
             self.listener = context.socket(REP)
             self.listener.bind("tcp://*:" + str(port))
+            logger.debug('Listening on port %s', str(port))
             poller = Poller()
             poller.register(self.listener, POLLIN)
             while self.loop:
@@ -144,7 +150,7 @@ class NameServer(object):
                     continue
                 logger.debug("Replying to request: " + str(msg))
                 msg = Message.decode(msg)
-                self.listener.send_unicode(str(get_active_address(
+                self.listener.send_string(six.text_type(get_active_address(
                     msg.data["service"], arec)))
         except KeyboardInterrupt:
             # Needed to stop the nameserver.

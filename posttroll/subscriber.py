@@ -24,19 +24,19 @@
 """Simple library to subscribe to messages.
 """
 import logging
-from datetime import datetime, timedelta
-from six.moves.urllib.parse import urlsplit
-import six
-
 import time
+from datetime import datetime, timedelta
+from threading import Lock
+
+import six
 # pylint: disable=E0611
-from zmq import (SUB, Poller, LINGER,
-                 POLLIN, SUBSCRIBE, PULL, NOBLOCK, ZMQError)
+from zmq import LINGER, NOBLOCK, POLLIN, PULL, SUB, SUBSCRIBE, Poller, ZMQError
+
 # pylint: enable=E0611
 from posttroll import context
-from posttroll.message import Message, _MAGICK
+from posttroll.message import _MAGICK, Message
 from posttroll.ns import get_pub_address
-
+from six.moves.urllib.parse import urlsplit
 
 LOGGER = logging.getLogger(__name__)
 
@@ -79,9 +79,11 @@ class Subscriber(object):
         self._hooks = []
         self._hooks_cb = {}
 
+        self.poller = Poller()
+        self._lock = Lock()
+
         self.update(addresses)
 
-        self.poller = Poller()
         self._loop = True
 
     def add(self, address, topics=None):
@@ -89,36 +91,38 @@ class Subscriber(object):
 
         It topics is None we will subscibe to already specified topics.
         """
-        if address in self.addresses:
-            return False
+        with self._lock:
+            if address in self.addresses:
+                return False
 
-        topics = self._magickfy_topics(topics) or self._topics
-        LOGGER.info("Subscriber adding address %s with topics %s",
-                    str(address), str(topics))
-        subscriber = context.socket(SUB)
-        for t__ in topics:
-            subscriber.setsockopt_string(SUBSCRIBE, six.text_type(t__))
-        subscriber.connect(address)
-        self.sub_addr[subscriber] = address
-        self.addr_sub[address] = subscriber
-        if self.poller:
-            self.poller.register(subscriber, POLLIN)
-        return True
+            topics = self._magickfy_topics(topics) or self._topics
+            LOGGER.info("Subscriber adding address %s with topics %s",
+                        str(address), str(topics))
+            subscriber = context.socket(SUB)
+            for t__ in topics:
+                subscriber.setsockopt_string(SUBSCRIBE, six.text_type(t__))
+            subscriber.connect(address)
+            self.sub_addr[subscriber] = address
+            self.addr_sub[address] = subscriber
+            if self.poller:
+                self.poller.register(subscriber, POLLIN)
+            return True
 
     def remove(self, address):
         """Remove *address* from the subscribing list for *topics*.
         """
-        try:
-            subscriber = self.addr_sub[address]
-        except KeyError:
-            return False
-        LOGGER.info("Subscriber removing address %s", str(address))
-        if self.poller:
-            self.poller.unregister(subscriber)
-        del self.addr_sub[address]
-        del self.sub_addr[subscriber]
-        subscriber.close()
-        return True
+        with self._lock:
+            try:
+                subscriber = self.addr_sub[address]
+            except KeyError:
+                return False
+            LOGGER.info("Subscriber removing address %s", str(address))
+            if self.poller:
+                self.poller.unregister(subscriber)
+            del self.addr_sub[address]
+            del self.sub_addr[subscriber]
+            subscriber.close()
+            return True
 
     def update(self, addresses):
         """Updating with a set of addresses.
@@ -306,16 +310,6 @@ class NSSubscriber(object):
                 time.sleep(1)
             return []
 
-        # Search for addresses corresponding to service.
-        for service in self._services:
-            addr = _get_addr_loop(service, self._timeout)
-            if not addr:
-                LOGGER.warning("Can't get any address for %s", service)
-            else:
-                LOGGER.debug("Got address for %s: %s",
-                             str(service), str(addr))
-            self._addresses.extend(addr)
-
         # Subscribe to those services and topics.
         LOGGER.debug("Subscribing to topics %s", str(self._topics))
         self._subscriber = Subscriber(self._addresses,
@@ -326,6 +320,18 @@ class NSSubscriber(object):
             self._addr_listener = _AddressListener(self._subscriber,
                                                    self._services,
                                                    nameserver=self._nameserver)
+
+        # Search for addresses corresponding to service.
+        for service in self._services:
+            addresses = _get_addr_loop(service, self._timeout)
+            if not addresses:
+                LOGGER.warning("Can't get any address for %s", service)
+                continue
+            else:
+                LOGGER.debug("Got address for %s: %s",
+                             str(service), str(addresses))
+            for addr in addresses:
+                self._subscriber.add(addr)
 
         return self._subscriber
 

@@ -22,16 +22,16 @@
 
 """Test the publishing and subscribing facilities.
 """
+import time
 import unittest
 from datetime import timedelta
 from threading import Thread
+
 import six
 
-import time
-
 from posttroll.message import Message
-from posttroll.ns import (NameServer, get_pub_addresses,
-                          get_pub_address, TimeoutError)
+from posttroll.ns import (NameServer, TimeoutError, get_pub_address,
+                          get_pub_addresses)
 from posttroll.publisher import Publish, Publisher, get_own_ip
 from posttroll.subscriber import Subscribe, Subscriber
 
@@ -55,7 +55,7 @@ class TestNS(unittest.TestCase):
         """Test retrieving addresses.
         """
 
-        with Publish("data_provider", 0, ["this_data"]):
+        with Publish(six.text_type("data_provider"), 0, ["this_data"]):
             time.sleep(3)
             res = get_pub_addresses(["this_data"])
             self.assertEqual(len(res), 1)
@@ -66,7 +66,7 @@ class TestNS(unittest.TestCase):
                 self.assertEqual(res[0][key], val)
             self.assertTrue("receive_time" in res[0])
             self.assertTrue("URI" in res[0])
-            res = get_pub_addresses(["data_provider"])
+            res = get_pub_addresses([six.text_type("data_provider")])
             self.assertEqual(len(res), 1)
             expected = {u'status': True,
                         u'service': [u'data_provider', u'this_data'],
