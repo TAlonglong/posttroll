@@ -80,6 +80,7 @@ def get_logger(opts):
 
 
 def run_normal(ns, logger):
+    """Run as normal process"""
     try:
         ns.run()
     except KeyboardInterrupt:
@@ -93,7 +94,7 @@ def run_normal(ns, logger):
 
 
 def run_daemon(opts, ns, logger):
-
+    """Run as daemon"""
     if opts.daemon == "status":
         if os.path.exists("/tmp/nameserver.pid"):
             with open("/tmp/nameserver.pid") as fd_:
